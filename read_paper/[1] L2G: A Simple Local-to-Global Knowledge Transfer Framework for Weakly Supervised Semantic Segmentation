@@ -1,0 +1,139 @@
+- 이 논문은 2022년 CVPR에 실린 논문이다.
+
+
+
+다른 Wsss 논문들과 마찬가지로 CAM(class activation map)을 통해서 구분가능한 영역을 찾고 이를 활용하였다. L2G는 local-to-global knowledge transfer framework이다. 기존의 모델들은 대부분 전체 입력 이미지를 유일한 모델의 입력으로 사용하였다. 저자들은 입력 이미지를 local patch들로 대체하였을 때 더 디테일한 object region을 발견했다. 아래 그림은 전체적인 파이프라인이다.
+
+
+제일 왼쪽 위의 그림이 global한 전체 이미지고, 나머지 4개의 위쪽 이미지가 local patch들이다. 전체 이미지로만 학습하였을 때보다 local patch들을 넣었을 때 더 세부적인 요소를 파악하는 것을 확인할 수 있다.
+<img src="segmentation_weakly/img/l2g/1.png">
+
+
+Method
+
+
+전체 파이프라인을 세부적으로 살펴보도록 하자. 먼저 attention map을 생성하는 방법에 대해서 살펴보자. Input image는 I이고, image-level의 레이블은 y이다. 마지막 conv layer의 output feature는 F이고 F는 C개의 채널을 가지고 있다. 이 때의 C는 클래스의 수이다. 마지막 conv layer 다음에 GAP(global average pooling) 층이 온다. F는 C개의 f^c 벡터로 풀링된다. 이 때 분류 손실 함수는 sigmoid cross-entropy loss를 사용한다. σ는 sigmoid 함수이다. 
+
+
+attention map은 마지막 conv layer의 output으로부터 만들어진다. 어떤 class c의 attention map A^c는 F의 c번 째 채널로부터 만들어진다. 아래 식을 통해 만들어진다. 
+
+
+이러한 방법은 기존의 논문들도 많이 차용하였다. 이 때 종종 구분가능하지 않은 영역을 발견하는 것에 실패한다. 이를 local-to-global knowldege로 해결하고자 하였다.
+
+
+
+저자들의 목표는 local patch의 attention map 정보를 global network에 이용할 수 있게 하는 것이다. 전체적인 프레임워크는 4개의 구성요소들로 이루어져 있다. global network, local network, attention transfer module, shape transfer module이다. 아래에 전체적인 프레임워크가 나와있다.
+
+
+Global Network와 local network는 어느 CNN 분류기를 사용해도 상관없다. 논문에서는 VGGNet, ResNet-38을 이야기한다. Attention transfer module에서, 두 가지 loss function을 최적화하였다. 
+
+
+위 loss function 방식이 바로 이해되지 않아도 괜찮다. 전체적인 구조와 함께 논문에서 설명해준다. 논문을 토대로 세부적으로 살펴보도록 하겠다.
+
+
+
+1 Local-to-Global Attention Transfer
+
+Input 이미지 I가 주어졌을 때 transform된 다른 관점의 집합을 V라고 정의한다. V_I는 global view, local view는 {V_1, V_2 ... V_N}으로 정의한다. local view들은 global view에서 랜덤하게 크롭한 patch들이다. V_I는 global network에 들어간다. global network는 local network로부터 지식을 얻고 추론 과정에서 attention 객체들을 만들어낸다. {F_1, F_2, ... , F_N}은 local network의 마지막 conv layer의 output들이다. C개의 클래스 만큼(채널 만큼) 있다. F 헷은 global network의 마지막 conv layer이고, C+1개의 채널로 구성되어 있다.
+
+
+
+Classification Loss
+
+분류 손실 함수는 local network에서 사용된다. feature map  {F_1, F_2, ... , F_N}은 먼저 global pooling layer로 보내진다. 이를 통해 1D의 feature vector로 된다. {f_1, f_2, ... , f_N}. f_i가 주어졌을 때 모든 카테고리에 대한 확률 값은 sigmoid 함수를 통해 계산이 된다. q_i = σ(f_i). 전체 loss function은 아래와 같다.
+
+
+Attention Transfer Loss
+
+위에 attention map을 만드는 식으로부터 아래 attention map이 만들어진다. c는 image-level 레이블 중 c번 째 카테고리다.
+
+
+이제 이 attention map들을 global network로 transfer할건데, 이 때 MSE loss를 사용한다.
+
+
+
+최종 output feature map인 F헷이 주어졌을 때 소프트맥스 함수를 각 채널별로 적용해준다.
+
+
+이제 G를 {G_1, G_2, ... , G_N}으로 {A_1, A_2, ... , A_N}과 영역이 일치하게끔 crop한다. attention transfer loss는 아래와 같이 계산된다.
+
+
+2 Local-to-Global Shape Transfer
+
+더 세부적인 영역을 잘 파악하기 위해서 보조적인 shape cnstraint를 추가함으로서 attention transfer loss에서 salient object information을 사용하였다. 이를 통해 object들의 shape information을 얻을 수 있다.
+
+shape transfer는 local network으로부터 attention map {A_i}가 주어졌을 때 작은 threshold 값(논문에서는 0.1)을 기준으로 이진화한다 {B_i}. 그리고 나서 주어진 이미지 I에서 saliency map S를 만들기 위해 saliency model을 이용한다. 그리고 나서 일치하는 saliency region을 attention map {A_i}로부터 얻는다. 식은 다음과 같이 바뀐다.
+
+
+saliency map은 모든 개체에서 존재하지 않기 때문에 위 식처럼 두 가지 방식을 혼용해서 사용한다. shape transfer를 사용했을 때 아래 그림과 같이 세부적으로 더 잘 찾아낸다.
+
+
+
+
+Experiment
+- 실험은 PASCAL VOC 2012와 MS COCO 2014에서 진행되었다. 
+
+- PASCAL VOC 2012는 20개의 semantic 카테고리와 background로 구성되어 있다. training : 1464, validation : 1449, test : 1456 이미지로 각각 구성되어 있다. 가장 이전의 work를 토대로 augmented training set도 사용하여 총 10582 장의 이미지가 있다.
+
+- MS COCO 2014는 80개의 semantic 카테고리가 있다. 카테고리에 포함되지 않는 이미지들을 제외하여 82081장의 train 이미지와 40137장의 validation 이미지가 있다.
+
+- 평가 metric는 mIOU(mean intersection-over-union)을 사용하였다. 
+
+- 모든 이미지 size는 512x512가 되도록 하였다. global에 448x448로 crop되어 들어간다. local image patch들은 448로 crop된 global 이미지를 320x320로 crop해서 만든다.
+
+- Classification Network는 ResNet-38을 사용하였고 pixel correlcation module를 통해서 target object의 형태에 제약을 준다. 
+
+- PASCAL VOC에서 classifcation은 10 epoch을 통해 진행되고 optimizer는 SGD를 사용하였다. 초기 learning rate는 1e-3, 6번 째 epoch에서 decay가 이루어진다. loss weight λ는 10이다. batch size는 3, weighted decay는 5e-4, patch 수는 6이다.
+
+- MS COCO에서는 classification은 15 epoch을 통해 진행되고 optimizer는 SGD를 사용한다. 초기 learning rate는 0.1로 하였고 스케줄러로 poly를 사용하였다. λ는 30으로 하고 진행하였다. batch size는 12, weight decay는 5e-4 patch 수는 4이다.
+
+- segmentation 모델로 DeepLab v1 v2를 사용하였다. classfication 모델로는 VGG-16과 ResNet-101을 다 사용하였다. 
+
+
+
+랜덤하게 patch vs 순서대로 patch 가져오기
+
+- 순서대로 가져올 때는 stride 64로 하여 9개의 local view를 가져왔다. 실험 비교시에는 랜덤하게 patch를 가져올 때도 9개를 랜덤하게 뽑았다. 크기는 320 x 320로 동일하다. 두 pseudo segmentation 레이블은 꽤 성능이 비슷하다. random 68.8% v.s. uniform 68.5%. 실험에서는 local view 수를 비슷하게 설정해서 random samping 전략으로 진행하였다.
+
+
+
+Patch 수에 따른 성능 비교
+
+
+patch size가 320 x 320일 때 성능이 가장 좋았고, 4개일 때 성능이 가장 좋았다.
+
+
+
+local-to-global 지식 전이의 중요성 파악
+
+
+- local network만 사용했을 때, cam을 사용했을 때 보다 살짝 성능이 좋아짐
+
+- sliding window를 사용했을 때 (random x) 성능이 떨어짐)
+
+- l2g일 때 성능이 크게 좋아짐
+
+
+
+
+- L2G에 shape information까지 추가했을 때 성능이 더 좋아짐. local에서도 마찬가지. 
+
+
+
+
+- saliency map을 사용하지 않은 모델과 사용한 모델과의 비교
+
+
+- PASCAL VOC 2012에서 여러 모델들과의 비교. DeepLab v1, v2와 Local + Saliency map 인 듯
+
+
+
+
+- MS COCO에서의 비교
+
+
+
+
+공식 깃허브 링크
+
+https://github.com/PengtaoJiang/L2G
