@@ -6,7 +6,7 @@
 
 
 제일 왼쪽 위의 그림이 global한 전체 이미지고, 나머지 4개의 위쪽 이미지가 local patch들이다. 전체 이미지로만 학습하였을 때보다 local patch들을 넣었을 때 더 세부적인 요소를 파악하는 것을 확인할 수 있다.
-<img src="./segmentation_weakly/img/l2g/1.png">
+<img src="/segmentation_weakly/img/l2g/1.png">
 
 
 Method
